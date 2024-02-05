@@ -1,0 +1,163 @@
+# Experiment name
+name: A2W2
+
+# Name of output directory. Checkpoints and logs will be saved at `pwd`/output_dir
+output_dir: out
+
+# Device to be used
+device:
+  # Use CPU or GPU (choices: cpu, cuda)
+  type: cuda
+  # GPU device IDs to be used. Only valid when device.type is 'cuda'
+  # gpu: [1]
+
+# seed
+seed: 0
+
+# Dataset loader
+dataloader:
+  # Dataset to train/validate (choices: imagenet, cifar10)
+  dataset: cifar10
+  # Number of categories in the specified dataset (choices: 1000, 10)
+  num_classes: 10
+  # Path to dataset directory
+  path: /mnt/data/hupeng/Downloads/CIFAR10
+  # Size of mini-batch
+  batch_size: 256
+  # Number of data loading workers
+  workers: 8
+  # Portion of training dataset to set aside for validation (range: [0, 1))
+  val_split: 0.
+
+resume:
+  # Path to a checkpoint to be loaded. Leave blank to skip
+  # path: /home/hupeng/Documents/quantization/code/lsq-net/out/CIFAR10/ResNet20/LSQ/A2W2_Cosine_20230606-150254/A2W2_Cosine_checkpoint.pth.tar
+  path:
+  # Resume model parameters only
+  lean: false
+
+#============================ Model ============================================
+
+# Supported model architecture
+# choices:
+#   ImageNet:
+#     resnet18, resnet34, resnet50, resnet101, resnet152
+#   CIFAR10:
+#     resnet20, resnet32, resnet44, resnet56, resnet110, resnet1202
+arch: resnet20
+
+# Use pre-trained model
+pre_trained: true
+
+#============================ Quantization =====================================
+
+quan:
+  act: # (default for all layers)
+    # Quantizer type (choices: lsq)
+    mode: lsq
+    # Bit width of quantized activation
+    bit: 2
+    # Each output channel uses its own scaling factor
+    per_channel: false
+    # Whether to use symmetric quantization
+    symmetric: false
+    # Quantize all the numbers to non-negative
+    all_positive: true
+    # Clamp configuration
+    clamp:
+      # Clamp mode (choices: null, square_clamp, log_exp_clamp)
+      clamp_mode:
+      # Soft clamp temperature hayper parameter
+      clamp_temp: 9
+    # Whether to extend clamp range for float data
+    extend_range: true
+  weight: # (default for all layers)
+    # Quantizer type (choices: lsq)
+    mode: lsq
+    # Bit width of quantized weight
+    bit: 2
+    # Each output channel uses its own scaling factor
+    per_channel: false
+    # Whether to use symmetric quantization
+    symmetric: true
+    # Whether to quantize all the numbers to non-negative
+    all_positive: false
+    # Clamp configuration
+    clamp:
+      # Clamp mode (choices: null, square_clamp, log_exp_clamp)
+      clamp_mode: log_exp_clamp
+      # Soft clamp temperature hayper parameter
+      clamp_temp: 5
+    # Whether to extend clamp range for float data
+    extend_range: true
+  # Specify quantized bit width for some layers, like this:
+  excepts: [conv1, linear]
+
+#============================ Training / Evaluation ============================
+
+# Evaluate the model without training
+# If this field is true, all the bellowing options will be ignored
+eval: false
+
+epochs: 400
+
+optimizer:
+  # Optimizer type (choices: sgd, adam)
+  mode: sgd
+  sgd_params:
+    learning_rate: 0.04
+    momentum: 0.9
+    weight_decay: 0.0001
+  adam_params:
+    learning_rate: 0.1
+    betas: [0.9, 0.999]
+    weight_decay: 0.0001
+    amsgrad: false
+quan_optimizer:
+  # Optimizer type (choices: sgd, adam)
+  mode: sgd
+  sgd_params:
+    learning_rate: 0.02
+    momentum: 0.9
+    weight_decay: 0.0001
+  adam_params:
+    learning_rate: 0.0001
+    betas: [0.9, 0.999]
+    weight_decay: 0.0
+    amsgrad: false
+
+# Learning rate scheduler
+lr_scheduler:
+  # Update learning rate per batch or epoch
+  update_per_batch: false
+
+  # Uncomment one of bellowing options to activate a learning rate scheduling
+
+  # Fixed learning rate
+  # mode: fixed
+
+  # Step decay
+  # mode: step
+  # step_size: 30
+  # gamma: 0.1
+
+  # Multi-step decay
+  # mode: multi_step
+  # milestones: [100, 200, 300, 350]
+  # gamma: 0.1
+
+  # Exponential decay
+  # mode: exp
+  # gamma: 0.95
+
+  # Cosine annealing
+  mode: cos
+  lr_min: 0
+  cycle: 400
+
+  # Cosine annealing with warm restarts
+  # mode: cos_warm_restarts
+  # lr_min: 0
+  # cycle: 5
+  # cycle_scale: 2
+  # amp_scale: 0.5
