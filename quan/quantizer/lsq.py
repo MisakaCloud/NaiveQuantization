@@ -144,13 +144,6 @@ class LsqQuanBeta(LsqQuan):
             thd_neg = self.thd_neg - 0.5 + 1e-6
             thd_pos = self.thd_pos + 0.5 - 1e-6
 
-        # try:
-        #     assert torch.all(min_val <= max_val)
-        # except Exception as e:
-        #     print('Error occurred! Please handle it...')
-        #     import pdb
-        #     pdb.set_trace()
-
         if self.clamp_func:
             x = self.clamp_func.apply(x, min_val, max_val, self.clamp_temp)
         else:

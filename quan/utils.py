@@ -20,6 +20,8 @@ def quantizer(default_cfg, this_cfg=None):
         q = LsqQuanBeta
     elif target_cfg['mode'] == 'lcq':
         q = LcqQuan
+    elif target_cfg['mode'] == 'lcqdouble':
+        q = LcqDoubleQuan
     else:
         raise ValueError('Cannot find quantizer `%s`', target_cfg['mode'])
 

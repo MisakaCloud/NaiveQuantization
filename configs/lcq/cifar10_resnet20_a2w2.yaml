@@ -53,7 +53,7 @@ pre_trained: true
 
 quan:
   act: # (default for all layers)
-    # Quantizer type (choices: lcq)
+    # Quantizer type (choices: lcq, lcqdouble)
     mode: lcq
     # Bit width of quantized activation
     bit: 2
@@ -63,7 +63,7 @@ quan:
     all_positive: true
     # Interval number
     interval_num: 16
-    # kd loss mode (choices: logit, st, at)
+    # kd loss mode (choices: null, logit, st, at)
     kd_loss_mode:
     # clamp configuration
     clamp:
@@ -73,7 +73,7 @@ quan:
       clamp_temp: 9
 
   weight: # (default for all layers)
-    # Quantizer type (choices: lcq)
+    # Quantizer type (choices: lcq, lcqdouble)
     mode: lcq
     # Bit width of quantized weight
     bit: 2
@@ -99,13 +99,13 @@ quan:
 # If this field is true, all the bellowing options will be ignored
 eval: false
 
-epochs: 200
+epochs: 400
 
 optimizer:
   # Optimizer type (choices: sgd, adam)
   mode: sgd
   sgd_params:
-    learning_rate: 0.04
+    learning_rate: 0.1
     momentum: 0.9
     weight_decay: 0.0001
   adam_params:
@@ -117,7 +117,7 @@ quan_optimizer:
   # Optimizer type (choices: sgd, adam)
   mode: sgd
   sgd_params:
-    learning_rate: 0.02
+    learning_rate: 0.04
     momentum: 0.9
     weight_decay: 0.0001
   adam_params:
@@ -153,7 +153,7 @@ lr_scheduler:
   # Cosine annealing
   mode: cos
   lr_min: 0
-  cycle: 200
+  cycle: 400
 
   # Cosine annealing with warm restarts
   # mode: cos_warm_restarts

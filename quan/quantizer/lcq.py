@@ -195,11 +195,11 @@ class LcqQuan(Quantizer):
         else:
             num_element = x.numel()
         s_grad_scale = 1.0 / ((self.thd_pos * num_element) ** 0.5)
-        # s_scale = grad_scale(self.scale, s_grad_scale)
-        if self.all_positive:
-            s_scale = grad_scale(torch.abs(self.scale), 3*s_grad_scale)
-        else:
-            s_scale = grad_scale(torch.abs(self.scale), s_grad_scale)
+        s_scale = grad_scale(self.scale, s_grad_scale)
+        # if self.all_positive:
+        #     s_scale = grad_scale(torch.abs(self.scale), 3*s_grad_scale)
+        # else:
+        #     s_scale = grad_scale(torch.abs(self.scale), s_grad_scale)
 
         # clamp x into [0, 1]
         # x_sign = torch.sign(x)
@@ -210,36 +210,40 @@ class LcqQuan(Quantizer):
         min_val = self.thd_neg * s_scale.detach()
         max_val = self.thd_pos * s_scale.detach()
         if self.clamp_func:
-            x = self.clamp_func.apply(x, min_val, max_val-1e-6, self.clamp_temp)
+            x = self.clamp_func.apply(x, min_val, max_val, self.clamp_temp)
         else:
-            x = torch.clamp(x, min_val, max_val-1e-6)
+            x = torch.clamp(x, min_val, max_val)
         x = x / s_scale
 
+        theta_scale = grad_scale(self.theta, 1.0)
         # theta_scale = grad_scale(self.theta, 1.0/(num_element ** 0.5))
-        # normalized_theta = torch.softmax(theta_scale, dim=0)
+        normalized_theta = torch.softmax(theta_scale, dim=0)
         if self.all_positive:
-            theta_scale = grad_scale(self.theta, 3.0/(num_element ** 0.5))
-            normalized_theta = torch.softmax(theta_scale, dim=0)
+            # theta_scale = grad_scale(self.theta, 3.0/(num_element ** 0.5))
+            # normalized_theta = torch.softmax(theta_scale, dim=0)
             # d_i i ∈ [1, interval_num]
             interval_upper = torch.arange(1, self.interval_num+1, dtype=torch.float,
                                           device=theta_scale.device) / self.interval_num
+            interval_upper[-1] += 1e-6
             interval_lower = torch.zeros(self.interval_num, device=theta_scale.device)
             interval_lower[1:] = interval_upper[:-1]
             # beta_i i ∈ [1, interval_num]
             matrix_mask = torch.tril(torch.ones(self.interval_num, self.interval_num,
                                                 device=theta_scale.device))
             level_upper = torch.mv(matrix_mask, normalized_theta.detach())
-            level_upper[-1] = 1. # avoid possible accumulate error
+            # level_upper[-1] = 1. # avoid possible accumulate error
+            level_upper[-1] = 1. + 1e-6 # avoid possible accumulate error
             level_lower = torch.zeros(self.interval_num, device=theta_scale.device)
             level_lower[1:] = level_upper[:-1]
         else:
-            theta_scale = grad_scale(self.theta, 1.0/(num_element ** 0.5))
-            normalized_theta = torch.softmax(theta_scale, dim=0)
+            # theta_scale = grad_scale(self.theta, 1.0/(num_element ** 0.5))
+            # normalized_theta = torch.softmax(theta_scale, dim=0)
             normalized_theta = normalized_theta * 2
             # d_i i ∈ [1, interval_num]
             interval_upper = torch.arange(1, self.interval_num+1, dtype=torch.float,
                                           device=theta_scale.device) - self.interval_num/2
             interval_upper = interval_upper / (self.interval_num / 2)
+            interval_upper[-1] += 1e-6
             interval_lower = torch.zeros(self.interval_num, device=theta_scale.device)
             interval_lower[1:] = interval_upper[:-1]
             interval_lower[0] = -1.
@@ -247,7 +251,8 @@ class LcqQuan(Quantizer):
             matrix_mask = torch.tril(torch.ones(self.interval_num, self.interval_num,
                                                 device=theta_scale.device))
             level_upper = torch.mv(matrix_mask, normalized_theta.detach()) - 1
-            level_upper[-1] = 1. # avoid possible accumulate error
+            # level_upper[-1] = 1. # avoid possible accumulate error
+            level_upper[-1] = 1. + 1e-6 # avoid possible accumulate error
             level_lower = torch.zeros(self.interval_num, device=theta_scale.device)
             level_lower[1:] = level_upper[:-1]
             level_lower[0] = -1.
@@ -273,40 +278,144 @@ class LcqQuan(Quantizer):
         slope = normalized_theta / normalized_sigma
         '''
 
-        try:
-            _x = x.unsqueeze(dim=-1)
-            # compact_out = (_x - interval_upper) * slope + level_upper
-            # compact_ind = (_x >= interval_lower) & (_x < interval_upper)
-            # compact_out = torch.sum(compact_out * compact_ind, dim=-1)
-            compact_ind = torch.where((_x >= interval_lower) & (_x < interval_upper))
-            compact_slp = torch.tile(slope, _x.shape)[compact_ind].view(x.shape)
-            compact_itv = torch.tile(interval_upper, _x.shape)[compact_ind].view(x.shape)
-            compact_lvl = torch.tile(level_upper, _x.shape)[compact_ind].view(x.shape)
-            compact_out = (x - compact_itv) * compact_slp + compact_lvl
+        _x = x.unsqueeze(dim=-1)
+        compact_ind = torch.where((_x >= interval_lower) & (_x < interval_upper))
+        # compact_slp = torch.tile(slope, _x.shape)[compact_ind].view(x.shape)
+        # compact_itv = torch.tile(interval_upper, _x.shape)[compact_ind].view(x.shape)
+        # compact_lvl = torch.tile(level_upper, _x.shape)[compact_ind].view(x.shape)
+        compact_slp = torch.tile(slope, _x.shape)[compact_ind].view(x.shape)
+        compact_itv = torch.tile(interval_upper, _x.shape)[compact_ind].view(x.shape)
+        compact_lvl = torch.tile(level_upper, _x.shape)[compact_ind].view(x.shape)
+        compact_out = (x - compact_itv) * compact_slp + compact_lvl
 
-            quantize_out = round_pass(compact_out * self.quantize_scale, self.quantize_scale)
-            quantize_out = quantize_out / self.quantize_scale
+        quantize_out = round_pass(compact_out*self.quantize_scale, self.quantize_scale)
+        quantize_out = quantize_out / self.quantize_scale
 
-            _x = quantize_out.unsqueeze(dim=-1)
-            # expand_out = (_x - level_upper) / slope + interval_upper
-            # expand_ind = (_x >= level_lower) & (_x < level_upper)
-            # expand_out = torch.sum(expand_out * expand_ind, dim=-1)
-            expand_ind = torch.where((_x >= level_lower) & (_x < level_upper))
-            expand_slp = torch.tile(slope, _x.shape)[expand_ind].view(x.shape)
-            expand_lvl = torch.tile(level_upper, _x.shape)[expand_ind].view(x.shape)
-            expand_itv = torch.tile(interval_upper, _x.shape)[expand_ind].view(x.shape)
-            expand_out = (quantize_out - expand_lvl) / expand_slp + expand_itv
-        except Exception as e:
-            import pdb
-            pdb.set_trace()
-            print('Error occurred! Please handle it...')
+        _x = quantize_out.unsqueeze(dim=-1)
+        expand_ind = torch.where((_x >= level_lower) & (_x < level_upper))
+        # expand_slp = torch.tile(slope, _x.shape)[expand_ind].view(x.shape)
+        # expand_lvl = torch.tile(level_upper, _x.shape)[expand_ind].view(x.shape)
+        # expand_itv = torch.tile(interval_upper, _x.shape)[expand_ind].view(x.shape)
+        expand_slp = torch.tile(slope, _x.shape)[expand_ind].view(x.shape)
+        expand_lvl = torch.tile(level_upper, _x.shape)[expand_ind].view(x.shape)
+        expand_itv = torch.tile(interval_upper, _x.shape)[expand_ind].view(x.shape)
+        expand_out = (quantize_out - expand_lvl) / expand_slp + expand_itv
 
         if self.kd_loss_mode:
             self.kd_loss = self.criterionKD(expand_out, x)
         else:
             self.kd_loss = 0.
 
-        # expand_out = x_sign * expand_out * s_scale
+        expand_out = expand_out * s_scale
+
+        return expand_out
+
+
+class LcqDoubleQuan(LcqQuan):
+    def __init__(self, bit, interval_num=16, all_positive=False,
+                 per_channel=True, kd_loss_mode=None, clamp=None):
+        super(LcqDoubleQuan, self).__init__(bit, interval_num, all_positive,
+                                            per_channel, kd_loss_mode, clamp)
+        self.sigma = torch.nn.Parameter(torch.ones(interval_num))
+
+    def forward(self, x):
+        if self.per_channel:
+            # linear layer activation/weight
+            if x.dim() == 2:
+                num_element = x.shape[1]
+            # conv2d layer activation (after im2col)
+            elif x.dim() == 3:
+                num_element = x.shape[0] * x.shape[1]
+            # conv2d layer weight
+            elif x.dim() == 4:
+                num_element = x.shape[0] * x.shape[2] * x.shape[3]
+            else:
+                raise ValueError(f'Invalid tensor dim {x.dim()}')
+        else:
+            num_element = x.numel()
+
+        s_grad_scale = 1.0 / ((self.thd_pos * num_element) ** 0.5)
+        s_scale = grad_scale(self.scale, s_grad_scale)
+
+        min_val = self.thd_neg * s_scale.detach()
+        max_val = self.thd_pos * s_scale.detach()
+        if self.clamp_func:
+            x = self.clamp_func.apply(x, min_val, max_val, self.clamp_temp)
+        else:
+            x = torch.clamp(x, min_val, max_val)
+        x = x / s_scale
+
+        sigma_scale = grad_scale(self.sigma, 1.0)
+        theta_scale = grad_scale(self.theta, 1.0)
+        normalized_sigma = torch.softmax(sigma_scale, dim=0)
+        normalized_theta = torch.softmax(theta_scale, dim=0)
+        if self.all_positive:
+            # theta_scale = grad_scale(self.theta, 3.0/(num_element ** 0.5))
+            # normalized_theta = torch.softmax(theta_scale, dim=0)
+            # d_i i ∈ [1, interval_num]
+            # interval_upper = torch.arange(1, self.interval_num+1, dtype=torch.float,
+            #                               device=theta_scale.device) / self.interval_num
+            # interval_lower = torch.zeros(self.interval_num, device=theta_scale.device)
+            # interval_lower[1:] = interval_upper[:-1]
+            # beta_i i ∈ [1, interval_num]
+            matrix_mask = torch.tril(torch.ones(self.interval_num, self.interval_num,
+                                                device=theta_scale.device))
+            interval_upper = torch.mv(matrix_mask, normalized_sigma.detach())
+            # interval_upper[-1] = 1. # avoid possible accumulate error
+            interval_upper[-1] = 1. + 1e-6 # avoid possible accumulate error
+            interval_lower = torch.zeros(self.interval_num, device=sigma_scale.device)
+            interval_lower[1:] = interval_upper[:-1]
+            level_upper = torch.mv(matrix_mask, normalized_theta.detach())
+            # level_upper[-1] = 1. # avoid possible accumulate error
+            level_upper[-1] = 1. + 1e-6 # avoid possible accumulate error
+            level_lower = torch.zeros(self.interval_num, device=theta_scale.device)
+            level_lower[1:] = level_upper[:-1]
+        else:
+            # theta_scale = grad_scale(self.theta, 1.0/(num_element ** 0.5))
+            # normalized_theta = torch.softmax(theta_scale, dim=0)
+            normalized_sigma = normalized_sigma * 2
+            normalized_theta = normalized_theta * 2
+            # d_i i ∈ [1, interval_num]
+            # beta_i i ∈ [1, interval_num]
+            matrix_mask = torch.tril(torch.ones(self.interval_num, self.interval_num,
+                                                device=theta_scale.device))
+            interval_upper = torch.mv(matrix_mask, normalized_sigma.detach()) - 1
+            # interval_upper[-1] = 1. # avoid possible accumulate error
+            interval_upper[-1] = 1. + 1e-6 # avoid possible accumulate error
+            interval_lower = torch.zeros(self.interval_num, device=sigma_scale.device)
+            interval_lower[1:] = interval_upper[:-1]
+            interval_lower[0] = -1.
+            level_upper = torch.mv(matrix_mask, normalized_theta.detach()) - 1
+            # level_upper[-1] = 1. # avoid possible accumulate error
+            level_upper[-1] = 1. + 1e-6 # avoid possible accumulate error
+            level_lower = torch.zeros(self.interval_num, device=theta_scale.device)
+            level_lower[1:] = level_upper[:-1]
+            level_lower[0] = -1.
+        # slope_i i ∈ [1, interval_num]
+        slope = normalized_theta / normalized_sigma
+
+        _x = x.unsqueeze(dim=-1)
+        compact_ind = torch.where((_x >= interval_lower) & (_x < interval_upper))
+        compact_slp = torch.tile(slope, _x.shape)[compact_ind].view(x.shape)
+        compact_itv = torch.tile(interval_upper, _x.shape)[compact_ind].view(x.shape)
+        compact_lvl = torch.tile(level_upper, _x.shape)[compact_ind].view(x.shape)
+        compact_out = (x - compact_itv) * compact_slp + compact_lvl
+
+        quantize_out = round_pass(compact_out*self.quantize_scale, self.quantize_scale)
+        quantize_out = quantize_out / self.quantize_scale
+
+        _x = quantize_out.unsqueeze(dim=-1)
+        expand_ind = torch.where((_x >= level_lower) & (_x < level_upper))
+        expand_slp = torch.tile(slope, _x.shape)[expand_ind].view(x.shape)
+        expand_lvl = torch.tile(level_upper, _x.shape)[expand_ind].view(x.shape)
+        expand_itv = torch.tile(interval_upper, _x.shape)[expand_ind].view(x.shape)
+        expand_out = (quantize_out - expand_lvl) / expand_slp + expand_itv
+
+        if self.kd_loss_mode:
+            self.kd_loss = self.criterionKD(expand_out, x)
+        else:
+            self.kd_loss = 0.
+
         expand_out = expand_out * s_scale
 
         return expand_out

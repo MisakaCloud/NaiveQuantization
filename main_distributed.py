@@ -23,8 +23,10 @@ import util
 from model import create_model
 
 dataset_mapping = {'imagenet': 'ImageNet', 'cifar10': 'CIFAR10'}
-architecture_mapping = {'resnet18': 'ResNet18', 'resnet20': 'ResNet20', 'resnet20_relu': 'ResNet20'}
-algorithm_mapping = {'lsq': 'LSQ', 'lsqbeta': 'LSQ', 'lcq': 'LCQ'}
+architecture_mapping = {'resnet18': 'ResNet18', 'resnet20': 'ResNet20',
+                        'resnet20_relu': 'ResNet20'}
+algorithm_mapping = {'lsq': 'LSQ', 'lsqbeta': 'LSQ', 'lcq': 'LCQ',
+                     'lcqdouble': 'LCQ'}
 
 
 def main_worker(gpu, ngpus_per_node, args):
